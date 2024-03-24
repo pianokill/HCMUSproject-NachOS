@@ -6,6 +6,8 @@
 #include "addrspace.h"
 #include "utility.h"
 #define MAX_SIZE 100
+#define MAX_FILE_LEN 32
+#define MAX_LEN 255
 
 //----------------------------------------------------------------------
 // ExceptionHandler
@@ -29,6 +31,20 @@
 //	"which" is the kind of exception.  The list of possible exceptions 
 //	are in machine.h.
 //----------------------------------------------------------------------
+
+void AdvancePC() {
+    int pcAfter = machine->registers[NextPCReg] + 4;
+    machine->registers[PrevPCReg] = machine->registers[PCReg];
+    machine->registers[PCReg] = machine->registers[NextPCReg];
+    machine->registers[NextPCReg] = pcAfter;
+}
+
+int power(int x, int n) {
+    int result = 1;
+    for (int i = 0; i < n; i++) 
+        result *= x;
+    return result;
+} 
 
 char* User2System(int virtAddr,int limit)
 {
@@ -92,10 +108,14 @@ void syscallReadInt(){
     //xu ly chuoi nhap vao-->so nguyen
     int numberIndex = 1;
     char sig = buffer[0];
+    if(sig != '-'){
+        numberIndex = 0;
+    }
+
     int result = 0;
     for(int i = numberIndex; i < numberBytesRead; i++){
         if(buffer[i] >= '0' && buffer[i] <= '9'){
-            result = result + (buffer[i] - '0') *  10; //power(10, numberBytesRead - i - 1);
+            result = result + (buffer[i] - '0') * power(10, numberBytesRead - i - 1);
         }
         else{
             printf("\nInvalid digit");
@@ -108,8 +128,8 @@ void syscallReadInt(){
     if(sig == '-'){
         result = result * (-1);
     }
+
     machine->WriteRegister(2, result);
-    //printf("%d\n", numberBytesRead);
     delete[]buffer; //leak memory
     delete synchconsole;
     return;
@@ -128,7 +148,6 @@ void syscallPrintInt(){
     }
     //Xu ly chuoi so
     bool isNegative = false;
-    int numberIndex = 1;
     int numberSize = 0;
     if(number < 0){
         isNegative = true;
@@ -158,7 +177,7 @@ void syscallPrintInt(){
 
 	buffer[numberSize] = 0;
 
-    synchconsole->Write(buffer, numberSize + 1);
+    synchconsole->Write(buffer, numberSize);
     //printf("Chuoi nhap la: %s\n", buffer);
     //leak memory
     delete[]buffer;
@@ -171,7 +190,7 @@ void syscallReadChar(){
     synchconsole = new SynchConsole();
     int maxBytes = 255;
     char* buffer = new char[maxBytes];
-    int numBytesRead = 1; //synchconsole->Read(buffer, maxBytes);
+    int numBytesRead = synchconsole->Read(buffer, maxBytes);
 
     if(numBytesRead > 1){
         printf("Only 1 character input");
@@ -197,7 +216,7 @@ void syscallReadChar(){
 
 void syscallPrintChar(){
     synchconsole = new SynchConsole();
-    char c = (char)machine->ReadRegister(4);
+    char c = (char)(machine->ReadRegister(4));
     synchconsole->Write(&c, 1);
     delete synchconsole;
     return;
@@ -245,12 +264,208 @@ void syscallPrintString(){
 
     return;
 }
-void AdvancePC() {
-    int pcAfter = machine->registers[NextPCReg] + 4;
-    machine->registers[PrevPCReg] = machine->registers[PCReg];
-    machine->registers[PCReg] = machine->registers[NextPCReg];
-    machine->registers[NextPCReg] = pcAfter;
+
+void syscallCreate(){
+    int virtAddr;
+    char* filename;
+
+    DEBUG('a',"\n SC_Create call ...");
+    DEBUG('a',"\n Reading virtual address of filename");
+    // check for exception
+
+    virtAddr = machine->ReadRegister(4);
+    DEBUG ('a',"\n Reading filename.");
+    filename = User2System(virtAddr,MAX_FILE_LEN + 1); // MaxFileLength là = 32
+    if (filename == NULL)
+    {
+        printf("\n Not enough memory in system");
+        DEBUG('a',"\n Not enough memory in system");
+        machine->WriteRegister(2,-1); // trả về lỗi cho chương trình người dùng
+        delete filename;
+        return;
+    }
+
+    if(filename[0] == 0){
+        printf("\n =====> File name cant be empty");
+        machine->WriteRegister(2, -1);
+        delete filename;
+        return;
+    }
+
+    DEBUG('a',"\n Finish reading filename.");
+
+    if (!fileSystem->Create(filename,0)){
+        printf("\n Error create file '%s'",filename);
+        machine->WriteRegister(2,-1);
+        delete filename;
+
+        return;
+    }
+
+    machine->WriteRegister(2,0); // trả về cho chương trình người dùng thành công
+    delete filename;
+    return;
 }
+
+void syscallOpen(){
+    int virtAddr = machine->ReadRegister(4);
+    int type = machine->ReadRegister(5);
+    char* filename;
+
+    filename = User2System(virtAddr, MAX_FILE_LEN);
+    int fileSlot = fileSystem->FindFreeSlot();
+
+    if(fileSlot != -1){
+        if(type == 0 || type == 1){
+            if((fileSystem->openf[fileSlot] = fileSystem->Open(filename, type)) != NULL){
+                machine->WriteRegister(2, fileSlot);
+            }
+        }
+
+        else if(type == 2){
+            machine->WriteRegister(2, 0);
+        }
+
+        else{
+            machine->WriteRegister(2, 1);
+        }
+        printf("Open success");
+
+        delete[] filename;
+        return;
+    }
+    machine->WriteRegister(2, -1);
+    delete[] filename;
+    return;
+}
+
+void syscallClose(){
+    int ID = machine->ReadRegister(4);
+    if(ID >= 0 && ID <= 9){
+        if(fileSystem->openf[ID] != NULL){
+            delete fileSystem->openf[ID];
+            fileSystem->openf[ID] = NULL;
+            machine->WriteRegister(2, 0);
+            printf("Close success");
+            return;
+        }
+        printf("Close fail");
+        machine->WriteRegister(2, -1);
+        return;
+    }
+    return;
+}
+
+void syscallRead(){
+    int virtAdrr = machine->ReadRegister(4);
+    int charCount = machine->ReadRegister(4);
+    int ID = machine->ReadRegister(6);
+
+    int oldPos, newPos;
+    char* buffer;
+
+    if(ID < 0 || ID > 9 || fileSystem->openf[ID] == NULL){
+        printf("\n ===> File is unavailable");
+        machine->WriteRegister(2, -1);
+        return;
+    }
+    else if(fileSystem->openf[ID] -> type == 3){
+        printf("\n ===> Unavailable to read stout file");
+        machine->WriteRegister(2, -1);
+        return;
+    }
+
+    //Xử lý đọc file
+    oldPos = fileSystem->openf[ID]->GetCurrentPos();
+    buffer = User2System(virtAdrr, charCount);
+
+    if(fileSystem->openf[ID]->type == 2){   //type 2: stdin
+        synchconsole = new SynchConsole();
+        int numberBytesRead = synchconsole->Read(buffer, charCount); //return register 2: number bytes
+        System2User(virtAdrr, numberBytesRead, buffer);
+
+        if(numberBytesRead < MAX_LEN){
+            machine->WriteRegister(2, numberBytesRead);
+        }
+        else{
+            machine->WriteRegister(2, -1);
+        }
+        printf("Read success");
+        delete[] buffer;
+        delete synchconsole;
+        return;
+    } 
+
+    if((fileSystem->openf[ID]->Read(buffer, charCount)) > 0){
+        newPos = fileSystem->openf[ID]->GetCurrentPos();
+        System2User(virtAdrr, newPos - oldPos, buffer);
+
+        if((newPos - oldPos) < MAX_LEN){
+            machine->WriteRegister(2, newPos - oldPos);
+        }
+        else {
+            machine->WriteRegister(2, -1);
+        }
+    }
+
+    else{
+        printf("\n ===> Empty file");
+        machine->WriteRegister(2, -2);
+    }
+    delete[]buffer;
+    return;
+}
+
+void syscallWrite(){
+    int virtAdrr = machine->ReadRegister(4);
+    int charCount = machine->ReadRegister(4);
+    int ID = machine->ReadRegister(6);
+
+    int oldPos, newPos;
+    char* buffer;
+
+    if(ID < 0 || ID > 9 || fileSystem->openf[ID] == NULL){
+        printf("\n ===> File is unavailable");
+        machine->WriteRegister(2, -1);
+        return;
+    }
+    
+    if(fileSystem->openf[ID]->type == 1 || fileSystem->openf[ID]->type == 2){
+        printf("\n ==> Unavailable to write into stdin and read -only file");
+        machine->WriteRegister(2, -1);
+        return;
+    } //error with type to write
+
+    //Xử lý file
+    oldPos = fileSystem->openf[ID]->GetCurrentPos();
+    buffer = User2System(virtAdrr, charCount);
+
+    if(fileSystem->openf[ID]->type == 0){
+        if((fileSystem->openf[ID]->Write(buffer, charCount)) > 0){
+            newPos = fileSystem->openf[ID]->GetCurrentPos();
+            machine->WriteRegister(2, newPos - oldPos);
+            delete[] buffer;
+            return;
+        }
+    }
+
+    if(fileSystem->openf[ID]->type == 3){
+        int idx = 0;
+        synchconsole = new SynchConsole();
+        while(buffer[idx] != 0){
+            synchconsole->Write(buffer + idx, 1);
+            idx++;
+        }
+        synchconsole->Write(buffer + idx, 1);
+        machine->WriteRegister(2, idx - 1);
+        delete[] buffer;
+        return;
+    }
+
+    return;
+}
+
+
 void ExceptionHandler(ExceptionType which)
 {
     int type = machine->ReadRegister(2);
@@ -308,28 +523,46 @@ void ExceptionHandler(ExceptionType which)
                     break;
                 case SC_ReadChar:
                     syscallReadChar();
-                    //tang pc
                     break;
                 case SC_PrintChar:
                     syscallPrintChar();
-                    //tang pc
                     break;
                 
                 case SC_ReadString:
                     syscallReadString();
-                    //tang pc
                     break;
 
                 case SC_PrintString:
                     syscallPrintString();
-                    //tang pc
+                    break;
+                
+                case SC_Create:
+                    syscallCreate();
+                    break;
+
+                case SC_Open:
+                    syscallOpen();
+                    break;
+
+                case SC_Close:
+                    syscallClose();
+                    break;
+
+                case SC_Read:
+                    syscallRead();
+                    break;
+
+                case SC_Write:
+                    syscallWrite();
                     break;
             }
+            printf("\n");
             AdvancePC();
             break;
         }
 
     }
+
     return;
     // if ((which == SyscallException) && (type == SC_Halt)) {
 	// DEBUG('a', "Shutdown, initiated by user program.\n");

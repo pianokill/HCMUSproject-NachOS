@@ -104,7 +104,7 @@ FileSystem::FileSystem(bool format)
     // reads the file header off of disk (and currently the disk has garbage
     // on it!).
 
-        DEBUG('f', "Writing headers back to disk.\n");
+    DEBUG('f', "Writing headers back to disk.\n");
 	mapHdr->WriteBack(FreeMapSector);    
 	dirHdr->WriteBack(DirectorySector);
 
@@ -121,7 +121,7 @@ FileSystem::FileSystem(bool format)
     // sectors on the disk have been allocated for the file headers and
     // to hold the file data for the directory and bitmap.
 
-        DEBUG('f', "Writing bitmap and directory back to disk.\n");
+    DEBUG('f', "Writing bitmap and directory back to disk.\n");
 	freeMap->WriteBack(freeMapFile);	 // flush changes to disk
 	directory->WriteBack(directoryFile);
 
@@ -140,6 +140,17 @@ FileSystem::FileSystem(bool format)
         freeMapFile = new OpenFile(FreeMapSector);
         directoryFile = new OpenFile(DirectorySector);
     }
+
+    openf = new OpenFile*[10];
+	index = 0;
+	for(int i = 0; i < 10; i++){
+		openf[i] = NULL;
+    }
+    	
+    openf[index++] = this->Open("stdin", 2);
+	openf[index++] = this->Open("stdout", 3);
+    this->Create("stdin", 0);
+	this->Create("stdout", 0);
 }
 
 //----------------------------------------------------------------------
@@ -234,10 +245,40 @@ FileSystem::Open(char *name)
     DEBUG('f', "Opening file %s\n", name);
     directory->FetchFrom(directoryFile);
     sector = directory->Find(name); 
-    if (sector >= 0) 		
-	openFile = new OpenFile(sector);	// name was found in directory 
+    if (sector >= 0){		
+	    openFile = new OpenFile(sector);
+    }	// name was found in directory 
+
     delete directory;
-    return openFile;				// return NULL if not found
+    index++;
+    return openf[index - 1];				// return NULL if not found
+}
+
+OpenFile*
+FileSystem::Open(char* name, int type){
+    int Slot = this->FindFreeSlot();
+    Directory *directory = new Directory(NumDirEntries);
+    OpenFile *openFile = NULL;
+
+    int sector;
+    DEBUG('f', "Opening file %s\n", name);
+    directory->FetchFrom(directoryFile);
+    sector = directory->Find(name); 
+
+    if (sector >= 0){		
+	    openFile = new OpenFile(sector, type);
+    }	// name was found in directory 
+
+    delete directory;
+    return openf[Slot];
+    
+}
+
+int FileSystem::FindFreeSlot(){
+    for(int i = 2; i < 10; i++){
+			if(openf[i] == NULL) return i;
+		}
+		return -1;
 }
 
 //----------------------------------------------------------------------
