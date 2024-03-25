@@ -38,6 +38,7 @@
 #define SC_PrintChar 47
 #define SC_ReadString 48
 #define SC_PrintString 49
+#define SC_ReadFloat 50
 
 #ifndef IN_ASM
 
@@ -143,9 +144,11 @@ char ReadChar();
 
 void PrintChar(char character);
 
-void ReadString(char* buffer, int len);
+void ReadString(char* buffer);
 
 void PrintString(char* buffer);
+
+float* ReadFloat();
 
 #endif /* IN_ASM */
 

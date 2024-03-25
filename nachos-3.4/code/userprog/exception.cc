@@ -89,15 +89,16 @@ void syscallSub(){
     interrupt->Halt();
 }
 
+
 void syscallReadInt(){
     //khai bao mang kieu char de chua
-    char* buffer = new char[MAX_SIZE];
+    char* buffer = new char[MAX_LEN];
     synchconsole = new SynchConsole();
     //goi ham read cua synconsol
-    int numberBytesRead = synchconsole->Read(buffer, MAX_SIZE); //55 -10 0    
+    int numberBytesRead = synchconsole->Read(buffer, MAX_LEN); //55 -10 0    
 
     if(numberBytesRead == -1){
-        printf("\n Cannot read the integer");
+        printf("\n Cannot read the integer\n");
         delete synchconsole;
         delete[]buffer; 
         return;
@@ -118,7 +119,9 @@ void syscallReadInt(){
             result = result + (buffer[i] - '0') * power(10, numberBytesRead - i - 1);
         }
         else{
-            printf("\nInvalid digit");
+            printf("\nInvalid digit, Default will be zero(0)\n");
+            result = 0;
+            machine->WriteRegister(2, result);
             delete[]buffer; 
             delete synchconsole;
             return;
@@ -142,6 +145,7 @@ void syscallPrintInt(){
 
     if(number == 0){
         synchconsole->Write("0", 1);
+        
         //tang pc
         delete synchconsole;
         return;
@@ -228,11 +232,11 @@ void syscallReadString(){
     int virtAddr, len;
     char* buffer;
     virtAddr = machine->ReadRegister(4);
-    len = machine->ReadRegister(5);
-    buffer = new char[len + 1];
+    //len = machine->ReadRegister(5);
+    buffer = new char[MAX_LEN];
 
-    buffer = User2System(virtAddr, len);
-    int numberBytesRead = synchconsole->Read(buffer, len);
+    buffer = User2System(virtAddr, MAX_LEN);
+    int numberBytesRead = synchconsole->Read(buffer, MAX_LEN);
     if(numberBytesRead < 0){
         delete[] buffer;
         delete synchconsole;
@@ -240,7 +244,7 @@ void syscallReadString(){
         return;
     }
 
-    System2User(virtAddr, len, buffer);
+    System2User(virtAddr, MAX_LEN, buffer);
     delete[]buffer;
     delete synchconsole;
     return;
@@ -358,7 +362,7 @@ void syscallClose(){
 
 void syscallRead(){
     int virtAdrr = machine->ReadRegister(4);
-    int charCount = machine->ReadRegister(4);
+    int charCount = machine->ReadRegister(5);
     int ID = machine->ReadRegister(6);
 
     int oldPos, newPos;
@@ -418,7 +422,7 @@ void syscallRead(){
 
 void syscallWrite(){
     int virtAdrr = machine->ReadRegister(4);
-    int charCount = machine->ReadRegister(4);
+    int charCount = machine->ReadRegister(5);
     int ID = machine->ReadRegister(6);
 
     int oldPos, newPos;
@@ -463,6 +467,66 @@ void syscallWrite(){
     }
 
     return;
+}
+
+void syscallReadFloat(){
+    printf("hello");
+    return;
+    //  // Khai báo mảng kiểu char để chứa
+    // char* buffer = new char[MAX_SIZE];
+
+    // synchconsole = new SynchConsole();
+
+    // // Gọi hàm Read của SynchConsole
+    // int numberBytesRead = synchconsole->Read(buffer, MAX_SIZE);
+
+    // if(numberBytesRead == -1) {
+    //     printf("\n Cannot read the float");
+    //     delete synchconsole;
+    //     delete[] buffer;
+    //     return;
+    // }
+
+    // // Xử lý chuỗi nhập vào --> số thực
+    // int numberIndex = 1;
+    // char sig = buffer[0];
+    // float result = 0.0;
+    // int decimalIndex = -1;
+    // bool decimalFound = false;
+
+    // for(int i = numberIndex; i < numberBytesRead; i++) {
+    //     if(buffer[i] >= '0' && buffer[i] <= '9') {
+    //         result = result * 10 + (buffer[i] - '0');
+
+    //         if (decimalFound)
+    //             decimalIndex++;
+    //     }
+    //     else if (buffer[i] == '.' && !decimalFound) {
+    //         decimalFound = true;
+    //         decimalIndex = 0;
+    //     }
+    //     else {
+    //         printf("\nInvalid digit");
+    //         delete[] buffer;
+    //         delete synchconsole;
+    //         return;
+    //     }
+    // }
+
+    // // Thêm dấu thập phân
+    // if (decimalFound)
+    //     result /= power(10, decimalIndex);
+
+    // // Ghi kết quả số thực vào thanh ghi số 2 trả về
+    // if(sig == '-')
+    //     result = result * (-1);
+
+    // machine->WriteRegister(2, result);
+
+    // delete[] buffer;
+    // delete synchconsole;
+    // return;
+
 }
 
 
@@ -515,15 +579,23 @@ void ExceptionHandler(ExceptionType which)
                 case SC_Sub:
                     syscallSub();
                     break;
+        
                 case SC_ReadInt:
                     syscallReadInt();
                     break;
+
                 case SC_PrintInt:
                     syscallPrintInt();
                     break;
+                
+                case SC_ReadFloat:
+                    syscallReadFloat();
+                    break;
+
                 case SC_ReadChar:
                     syscallReadChar();
                     break;
+
                 case SC_PrintChar:
                     syscallPrintChar();
                     break;
@@ -556,7 +628,6 @@ void ExceptionHandler(ExceptionType which)
                     syscallWrite();
                     break;
             }
-            printf("\n");
             AdvancePC();
             break;
         }
