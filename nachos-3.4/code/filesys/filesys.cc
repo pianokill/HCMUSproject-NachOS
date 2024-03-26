@@ -266,7 +266,7 @@ FileSystem::Open(char* name, int type){
     sector = directory->Find(name); 
 
     if (sector >= 0){		
-	    openFile = new OpenFile(sector, type);
+	    openf[Slot] = new OpenFile(sector, type);
     }	// name was found in directory 
 
     delete directory;

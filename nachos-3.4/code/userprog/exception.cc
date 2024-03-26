@@ -318,7 +318,7 @@ void syscallOpen(){
 
     filename = User2System(virtAddr, MAX_FILE_LEN);
     int fileSlot = fileSystem->FindFreeSlot();
-
+    
     if(fileSlot != -1){
         if(type == 0 || type == 1){
             if((fileSystem->openf[fileSlot] = fileSystem->Open(filename, type)) != NULL){
@@ -435,7 +435,7 @@ void syscallWrite(){
     }
     
     if(fileSystem->openf[ID]->type == 1 || fileSystem->openf[ID]->type == 2){
-        printf("\n ==> Unavailable to write into stdin and read -only file");
+        printf("\n ==> Unavailable to write into stdin and read-only file");
         machine->WriteRegister(2, -1);
         return;
     } //error with type to write
